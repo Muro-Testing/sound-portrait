@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Shape of Thought — Sound Portrait</title>
+<meta name="description" content="Write someone a sentence. It becomes a vibrating plate and a chord, and you send it as a link or a short video.">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#06060a; --ink:#ece8df; --dim:rgba(236,232,223,.55); --faint:rgba(236,232,223,.24);
+  --accent:#7fe0d0;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+.ui{position:fixed;inset:0;pointer-events:none;padding:max(18px,env(safe-area-inset-top)) 18px max(18px,env(safe-area-inset-bottom))}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h1{margin:0;font:italic 400 clamp(17px,2.4vw,22px)/1.1 var(--serif)}
+h1 small{display:block;margin-top:5px;font:400 10px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.btn,.tools button{font:400 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  background:rgba(255,255,255,.04);border:1px solid var(--faint);border-radius:99px;padding:10px 14px;cursor:pointer;pointer-events:auto;
+  transition:color .2s,border-color .2s}
+.btn:hover,.btn:focus-visible,.tools button:hover,.tools button:focus-visible{color:var(--ink);border-color:var(--accent);outline:none}
+.btn.main{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+.btn.main:hover{color:var(--bg);filter:brightness(1.1)}
+.tools button[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+footer{position:absolute;left:18px;right:18px;bottom:max(18px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:10px}
+#read{font:400 10px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);text-align:center;min-height:30px}
+#read b{color:var(--accent);font-weight:400}
+form{pointer-events:auto;width:min(620px,100%);display:flex;flex-direction:column;gap:2px}
+input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--faint);color:var(--ink);text-align:center;outline:none;
+  caret-color:var(--accent);transition:border-color .3s;font-family:var(--serif);font-style:italic}
+#who{font-size:clamp(15px,2.2vw,18px);padding:6px 4px}
+#txt{font-size:clamp(19px,3vw,27px);padding:6px 4px 9px}
+input:focus{border-color:var(--accent)}
+input::placeholder{color:var(--faint)}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#hint{font:400 10px/1.4 var(--mono);letter-spacing:.12em;color:var(--faint);text-align:center}
+#cap{display:none;text-align:center;max-width:min(680px,100%);padding-bottom:6px}
+#capName{font:400 11px/1 var(--mono);letter-spacing:.3em;text-transform:uppercase;color:var(--accent);margin-bottom:10px;opacity:0;transition:opacity 1s}
+#capMsg{font:italic 400 clamp(20px,3.4vw,30px)/1.3 var(--serif);min-height:2.6em}
+.end{display:none}
+body[data-mode="play"] .create,body[data-mode="end"] .create,body[data-mode="intro"] .create{display:none}
+body[data-mode="play"] #cap,body[data-mode="end"] #cap{display:block}
+body[data-mode="end"] .end{display:flex}
+body[data-mode="play"] #read,body[data-mode="end"] #read,body[data-mode="intro"] #read{opacity:0}
+body[data-mode="intro"] .ui{visibility:hidden}
+#intro,#vid{position:fixed;inset:0;display:none;place-items:center;align-content:center;gap:14px;text-align:center;padding:24px;z-index:20;background:rgba(6,6,10,.9)}
+body[data-mode="intro"] #intro{display:grid}
+#vid.on{display:grid}
+#intro .eyebrow{font:400 10px/1 var(--mono);letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0}
+#intro h2{margin:0;font:italic 400 clamp(32px,7vw,58px)/1.1 var(--serif)}
+#intro small,#vidNote{font:400 10px/1.5 var(--mono);letter-spacing:.12em;color:var(--dim);max-width:420px}
+#vid video{max-height:68vh;max-width:min(88vw,380px);border-radius:6px;background:#000}
+#vid a{text-decoration:none}
+#fallback{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:32px;font:italic 20px/1.5 var(--serif);color:var(--dim)}
+@media (max-width:560px){h1 small{display:none}}
+</style>
+</head>
+<body data-mode="create">
+<canvas id="gl" aria-label="A vibrating plate with sand forming the shape of your message"></canvas>
+<div id="fallback">This needs WebGL2 with float render targets.<br>Try a recent Chrome, Edge, Safari or Firefox.</div>
+
+<div class="ui">
+  <header>
+    <h1>The Shape of Thought<small>Sound portrait</small></h1>
+    <div class="tools"><button id="bSound" aria-pressed="false">Sound</button></div>
+  </header>
+  <footer>
+    <div id="read" aria-live="polite"></div>
+    <div id="cap"><div id="capName"></div><div id="capMsg"></div></div>
+    <form id="form" class="create" autocomplete="off">
+      <input id="who" type="text" maxlength="24" spellcheck="false" aria-label="Who is it for" placeholder="who is it for?">
+      <input id="txt" type="text" maxlength="140" spellcheck="false" aria-label="What do you want to say to them" placeholder="say something to them…">
+    </form>
+    <div class="row create">
+      <button class="btn main" id="bPlay" type="button">Play it</button>
+      <button class="btn" id="bLink" type="button">Copy link</button>
+      <button class="btn" id="bVid" type="button">Save video</button>
+    </div>
+    <div id="hint" class="create">type to preview &nbsp;·&nbsp; drag across the plate to hear each part of your sentence</div>
+    <div class="row end">
+      <button class="btn main" id="bReplay" type="button">Replay</button>
+      <button class="btn" id="bNew" type="button">Make one for someone</button>
+    </div>
+  </footer>
+</div>
+
+<div id="intro">
+  <p class="eyebrow">A sound portrait for</p>
+  <h2 id="introName"></h2>
+  <button class="btn main" id="bOpen" type="button">Open it</button>
+  <small>Turn your sound on first.</small>
+</div>
+
+<div id="vid" role="dialog" aria-label="Your video">
+  <video id="vidEl" controls playsinline></video>
+  <div class="row"><a class="btn main" id="vidDl" download>Download video</a><button class="btn" id="vidClose" type="button">Close</button></div>
+  <div id="vidNote"></div>
+</div>
+
+<script>
+"use strict";
+/* ───────────────────────── utilities ───────────────────────── */
+const $ = id => document.getElementById(id);
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const MAXM = 8;
+function fnv(s){ let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
+
+/* ───────────────────────── text → plate ─────────────────────────
+   Words contribute a strong plate mode, their letter pairs weaker ones, so related
+   words share resonances. A small word list steers mood (colour + scale) and intensity. */
+const POS = "love joy happy bright light warm sun hope calm peace home mother father friend laugh smile gentle kind free beautiful alive grateful sweet summer dream wonder tender safe golden dance music spring morning together hug kiss holiday birthday proud thank thanks congratulationsлюбовь радость свет тепло дом мама счастье мечта".split(" ");
+const NEG = "grief loss lost alone lonely dark cold sad fear afraid anxious pain hurt cry death dead gone empty heavy tired angry hate broken shame regret miss missing goodbye night silence storm ache void numb sorryгоре страх тьма холод один боль потеря тоска".split(" ");
+const HIGH = "run fast fire storm scream panic rush burn race crash wild explode electric furious thunder spin party буря огонь бег".split(" ");
+const LOW = "slow still quiet sleep soft rest gentle calm drift hush fog moon breathe silence stillness тихо сон покой".split(" ");
+const sets = { POS: new Set(POS), NEG: new Set(NEG), HIGH: new Set(HIGH), LOW: new Set(LOW) };
+
+function analyze(raw){
+  const text = raw.trim();
+  const words = text.toLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
+  let pos = 0, neg = 0, hi = 0, lo = 0;
+  for (const w of words){ if (sets.POS.has(w)) pos++; if (sets.NEG.has(w)) neg++; if (sets.HIGH.has(w)) hi++; if (sets.LOW.has(w)) lo++; }
+  const letters = text.replace(/[^\p{L}]/gu, "");
+  const caps = letters ? (text.match(/\p{Lu}/gu) || []).length / letters.length : 0;
+  const excl = (text.match(/!/g) || []).length;
+  const valence = clamp((pos - neg) / (pos + neg + 1.2), -1, 1);
+  const arousal = clamp(0.28 + 0.14 * excl + caps * 0.9 + 0.2 * hi - 0.15 * lo + Math.min(words.length, 24) * 0.012, 0, 1);
+  const maxMode = Math.round(4 + arousal * 8);
+  const acc = new Map();
+  const add = (n, m, w, ph) => {
+    if (n === m) m = m % maxMode + 1;
+    if (n > m) [n, m] = [m, n];
+    const k = n + "," + m, e = acc.get(k);
+    if (e) e.w += w; else acc.set(k, { n, m, w, ph });
+  };
+  for (const word of words){
+    const h = fnv(word);
+    add(1 + h % maxMode, 1 + ((h >>> 8) % maxMode), 1 + Math.min(word.length, 10) * 0.04, (h >>> 16) / 65536 * 6.283);
+    for (let i = 0; i + 1 < word.length; i++){
+      const a = word.charCodeAt(i), b = word.charCodeAt(i + 1);
+      add(1 + a % maxMode, 1 + (b * 7) % maxMode, 0.38, ((a * 31 + b) % 100) / 100 * 6.283);
+    }
+  }
+  let modes = [...acc.values()].sort((x, y) => y.w - x.w).slice(0, MAXM);
+  if (!modes.length) modes = [{ n: 2, m: 3, w: 1, ph: 0 }, { n: 3, m: 5, w: .6, ph: 1.3 }];
+  const sum = modes.reduce((s, m) => s + m.w, 0);
+  modes.forEach(m => { const hh = fnv(m.n + "x" + m.m); m.a = m.w / sum * (hh & 1 ? 1 : -1); m.s = hh & 2 ? 1 : -1; });
+  modes.sort((x, y) => (x.n * x.n + x.m * x.m) - (y.n * y.n + y.m * y.m));
+  return { modes, valence, arousal, words: words.length };
+}
+
+/* ───────────────────────── state ───────────────────────── */
+const S = {
+  n: new Float32Array(MAXM).fill(2), m: new Float32Array(MAXM).fill(3), a: new Float32Array(MAXM),
+  tn: new Float32Array(MAXM).fill(2), tm: new Float32Array(MAXM).fill(3), ta: new Float32Array(MAXM), ph: new Float32Array(MAXM), sg: new Float32Array(MAXM).fill(1),
+  val: 0, aro: .3, tval: 0, taro: .3, count: 1,
+  impulse: 0, sweep: 0.5, sweepOn: 0, ptr: { x: -9, y: -9, down: false, inside: false },
+  text: "", dirty: true
+};
+function setTarget(res){
+  S.tval = res.valence; S.taro = res.arousal;
+  for (let i = 0; i < MAXM; i++){
+    const mo = res.modes[i];
+    if (mo){ S.tn[i] = mo.n; S.tm[i] = mo.m; S.ta[i] = mo.a; S.ph[i] = mo.ph; S.sg[i] = mo.s || 1; }
+    else S.ta[i] = 0;
+  }
+  S.count = res.modes.length;
+}
+setTarget(analyze("breathe"));
+for (let i = 0; i < MAXM; i++){ S.n[i] = S.tn[i]; S.m[i] = S.tm[i]; S.a[i] = S.ta[i]; }
+S.val = S.tval; S.aro = S.taro;
+
+/* palette: indigo (heavy) → aqua (still) → amber (warm), rose when radiant & intense */
+const C_NEG = [.36, .42, 1], C_MID = [.5, .88, .82], C_POS = [1, .71, .34], C_HOT = [1, .42, .6];
+function accent(v, a){
+  const base = v < 0 ? C_NEG.map((c, i) => lerp(C_MID[i], c, -v)) : C_MID.map((c, i) => lerp(c, C_POS[i], v));
+  const r = Math.max(v, 0) * a;
+  return base.map((c, i) => lerp(c, C_HOT[i], r * .8));
+}
+
+/* ───────────────────────── audio ───────────────────────── */
+const SCALES = { major: [0, 2, 4, 7, 9], minor: [0, 3, 5, 7, 10], open: [0, 2, 3, 7, 9] };
+const NOTE = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
+const Audio_ = { ctx: null, voices: [], on: true, master: null, rec: null, root: 110 };
+function curScale(){ return S.val > .25 ? "major" : S.val < -.25 ? "minor" : "open"; }
+function pitchFor(n, m, scaleName, root){
+  const q = Math.round(Math.sqrt(n * n + m * m) * .85), sc = SCALES[scaleName];
+  return root * Math.pow(2, (sc[q % 5] + 12 * Math.floor(q / 5)) / 12);
+}
+function audioInit(){
+  if (Audio_.ctx){ if (Audio_.ctx.state === "suspended") Audio_.ctx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  const ctx = Audio_.ctx = new AC();
+  const master = Audio_.master = ctx.createGain(); master.gain.value = 0;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 4;
+  const lp = Audio_.lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; lp.Q.value = .4;
+  const dry = ctx.createGain(); dry.gain.value = .75;
+  const conv = ctx.createConvolver();
+  const len = ctx.sampleRate * 3.2, buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++){ const d = buf.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  conv.buffer = buf;
+  const wet = ctx.createGain(); wet.gain.value = .5;
+  lp.connect(dry); dry.connect(comp); lp.connect(conv); conv.connect(wet); wet.connect(comp);
+  comp.connect(master); master.connect(ctx.destination);
+  Audio_.rec = ctx.createMediaStreamDestination(); master.connect(Audio_.rec);   /* tap for video export */
+  for (let i = 0; i < MAXM; i++){
+    const g = ctx.createGain(); g.gain.value = 0;
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = "sine"; o2.type = "triangle"; o2.detune.value = 4 + i;
+    const g2 = ctx.createGain(); g2.gain.value = .22;
+    o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(lp);
+    o1.start(); o2.start();
+    Audio_.voices.push({ o1, o2, g });
+  }
+  setSound(true);
+}
+function setSound(on){
+  Audio_.on = on; $("bSound").setAttribute("aria-pressed", on);
+  $("bSound").textContent = on ? "Sound on" : "Sound";
+  if (Audio_.master) Audio_.master.gain.setTargetAtTime(on ? .85 : 0, Audio_.ctx.currentTime, .25);
+}
+function audioFrame(ae, norm){
+  if (!Audio_.ctx) return;
+  const t = Audio_.ctx.currentTime, sc = curScale();
+  Audio_.root = 98 * Math.pow(2, S.aro * .6);
+  Audio_.lp.frequency.setTargetAtTime(700 + S.aro * 2600 + S.val * 300, t, .3);
+  for (let i = 0; i < MAXM; i++){
+    const v = Audio_.voices[i], f = pitchFor(S.n[i], S.m[i], sc, Audio_.root);
+    v.o1.frequency.setTargetAtTime(f, t, .09);
+    v.o2.frequency.setTargetAtTime(f * 2.001, t, .09);
+    v.g.gain.setTargetAtTime(Math.abs(ae[i]) / norm * .2, t, .12);
+  }
+}
+function pluck(freq, vel = .5, dur = 1.6){
+  const c = Audio_.ctx; if (!c) return;
+  const t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+  o.type = "sine"; o.frequency.value = freq; g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vel * .22, t + .008); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  const o2 = c.createOscillator(); o2.type = "sine"; o2.frequency.value = freq * 2.756;
+  const g2 = c.createGain(); g2.gain.setValueAtTime(vel * .05, t); g2.gain.exponentialRampToValueAtTime(.0001, t + .35);
+  o.connect(g); o2.connect(g2); g.connect(Audio_.lp); g2.connect(Audio_.lp);
+  o.start(t); o2.start(t); o.stop(t + dur + .1); o2.stop(t + .5);
+}
+function strikeSound(){
+  const c = Audio_.ctx; if (!c) return;
+  const t = c.currentTime, len = c.sampleRate * .35, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const n = c.createBufferSource(); n.buffer = b;
+  const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1400; bp.Q.value = .7;
+  const g = c.createGain(); g.gain.value = .35;
+  n.connect(bp); bp.connect(g); g.connect(Audio_.lp); n.start(t);
+  pluck(Audio_.root / 2, 1, 2.8);
+}
+function wordPluck(word){
+  const sc = SCALES[curScale()], k = fnv(word);
+  const q = (k % 9) + 4;
+  pluck(Audio_.root * 2 * Math.pow(2, (sc[q % 5] + 12 * Math.floor(q / 5)) / 12), .4, 1.4);
+}
+function charPluck(ch){
+  const sc = SCALES[curScale()], k = ch.toLowerCase().charCodeAt(0);
+  const q = (k % 11) + 3;
+  pluck(Audio_.root * 2 * Math.pow(2, (sc[q % 5] + 12 * Math.floor(q / 5)) / 12), .35, 1.2);
+}
+
+/* ───────────────────────── WebGL ───────────────────────── */
+const canvas = $("gl");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, powerPreference: "high-performance" });
+let GLOK = !!(gl && gl.getExtension("EXT_color_buffer_float"));
+if (!GLOK) $("fallback").style.display = "grid";
+
+const FIELD = `
+uniform vec4 uModes[${MAXM}];
+const float PI = 3.14159265;
+void field(vec2 p, out float u, out vec2 g){
+  u = 0.; g = vec2(0.);
+  for (int i = 0; i < ${MAXM}; i++){
+    vec4 md = uModes[i]; if (md.z == 0.) continue;
+    float n = md.x * PI, m = md.y * PI;
+    float cxn = cos(n*p.x), cxm = cos(m*p.x), cyn = cos(n*p.y), cym = cos(m*p.y);
+    float sxn = sin(n*p.x), sxm = sin(m*p.x), syn = sin(n*p.y), sym = sin(m*p.y);
+    float s = md.w;
+    u   += md.z * (cxn*cym + s*cxm*cyn);
+    g.x += md.z * (-n*sxn*cym - s*m*sxm*cyn);
+    g.y += md.z * (-m*cxn*sym - s*n*cxm*syn);
+  }
+}`;
+const VS_FULL = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p*2.-1., 0., 1.); }`;
+
+const FS_UPDATE = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uPos; uniform float uTime, uEnergy, uSpeed; uniform vec4 uPtr;
+${FIELD}
+out vec4 o;
+float h21(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec4 s = texelFetch(uPos, c, 0);
+  vec2 p = s.xy, p0 = p;
+  float u; vec2 g; field(p, u, g);
+  vec2 seed = gl_FragCoord.xy + fract(uTime) * vec2(173.1, 91.7);
+  vec2 r = vec2(h21(seed), h21(seed + 7.3)) - .5;
+  vec2 step = -u * g * uSpeed;
+  float sl = length(step); if (sl > .02) step *= .02 / sl;
+  p += step;
+  p += r * (0.0008 + 0.0042 * min(abs(u), 1.6)) * uEnergy;
+  if (uPtr.w > 0.){
+    vec2 d = p - uPtr.xy; float dl = length(d);
+    if (dl < uPtr.z){
+      float f = 1. - dl / uPtr.z;
+      p += (normalize(d + 1e-5) * .012 + r * .03) * f * uPtr.w;
+    }
+  }
+  p = abs(p); p = 1. - abs(1. - p);
+  o = vec4(p, min(abs(u), 2.), clamp(length(p - p0) * 70., 0., 1.));
+}`;
+
+const VS_POINTS = `#version 300 es
+precision highp float; precision highp int;
+uniform sampler2D uPos; uniform int uN; uniform vec2 uRes; uniform vec3 uView; uniform float uSize;
+out float vS;
+void main(){
+  ivec2 c = ivec2(gl_VertexID % uN, gl_VertexID / uN);
+  vec4 s = texelFetch(uPos, c, 0);
+  vec2 px = uView.xy + (s.xy - .5) * uView.z;
+  gl_Position = vec4(px / uRes * 2. - 1., 0., 1.);
+  gl_PointSize = uSize; vS = s.w;
+}`;
+const FS_POINTS = `#version 300 es
+precision highp float;
+in float vS; uniform vec3 uAccent; uniform float uAlpha; out vec4 o;
+void main(){
+  vec2 q = gl_PointCoord - .5; float d = dot(q, q); if (d > .25) discard;
+  float fall = 1. - d * 3.2;
+  vec3 sand = mix(vec3(1., .96, .88), uAccent, .22);
+  vec3 col = mix(sand, uAccent * 1.25, smoothstep(.05, .7, vS));
+  o = vec4(col, uAlpha * fall * (1. + vS * 1.6));
+}`;
+const FS_SOLID = `#version 300 es
+precision highp float; uniform vec4 uC; out vec4 o; void main(){ o = uC; }`;
+
+const FS_FINAL = `#version 300 es
+precision highp float;
+uniform sampler2D uScene; uniform vec2 uRes; uniform vec3 uView; uniform vec3 uAccent; uniform float uTime, uPulse;
+${FIELD}
+out vec4 o;
+float h21(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 sc = textureLod(uScene, uv, 0.).rgb;
+  vec3 bl = textureLod(uScene, uv, 2.).rgb * .35 + textureLod(uScene, uv, 3.).rgb * .5
+          + textureLod(uScene, uv, 4.).rgb * .65 + textureLod(uScene, uv, 5.).rgb * .9;
+  vec2 p = (gl_FragCoord.xy - uView.xy) / uView.z + .5;
+  float d = min(min(p.x, 1. - p.x), min(p.y, 1. - p.y));
+  float inside = step(0., d);
+  float u = 0.; vec2 g;
+  if (inside > 0.) field(clamp(p, 0., 1.), u, g);
+  vec3 col = vec3(.020, .020, .028);
+  col += inside * (vec3(.012, .012, .017) + uAccent * (.012 + .05 * smoothstep(.15, 1.4, u * u)) * (1. + uPulse * .8));
+  col += uAccent * .22 * exp(-abs(d) * uView.z * .035) * (.35 + .65 * inside) * .35;
+  col += uAccent * .5 * smoothstep(.0025, 0., abs(d)) * .4;
+  col += sc + bl * .62;
+  col = 1. - exp(-col * 1.25);
+  col *= 1. - .5 * pow(length(uv - .5) * 1.25, 2.4);
+  col += (h21(gl_FragCoord.xy + uTime) - .5) * .014;
+  o = vec4(col, 1.);
+}`;
+
+let Q = 0;                       /* quality level, raised automatically when frames are slow */
+const dprNow = () => Math.min(devicePixelRatio || 1, [1.25, 1, 1, .75][Q]);
+let slowFrames = 0;
+let prog = {}, vao, posTex = [], posFbo = [], N = 384, ping = 0;
+let sceneTex, sceneFbo, W = 1, H = 1, DPR = 1, layout = { cx: 0, cy: 0, size: 100 };
+
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + "\n" + src.split("\n").map((l, i) => (i + 1) + ": " + l).join("\n"));
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){ const nm = gl.getActiveUniform(p, i).name.replace("[0]", ""); u[nm] = gl.getUniformLocation(p, nm); }
+  return { p, u };
+}
+function makeTex(w, h, internal, format, type, data, mip){
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mip ? gl.LINEAR : gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFbo(tex){
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return f;
+}
+function randomSand(n){
+  const data = new Float32Array(n * n * 4);
+  for (let i = 0; i < n * n; i++){ data[i * 4] = Math.random(); data[i * 4 + 1] = Math.random(); }
+  return data;
+}
+function initParticles(){
+  posTex.forEach(t => gl.deleteTexture(t)); posFbo.forEach(f => gl.deleteFramebuffer(f));
+  N = [384, 288, 224, 160][Q];
+  const data = randomSand(N);
+  posTex = [0, 1].map(() => makeTex(N, N, gl.RGBA32F, gl.RGBA, gl.FLOAT, data, false));
+  posFbo = posTex.map(makeFbo);
+}
+function scatter(){            /* throw all the sand back into a random cloud */
+  if (!GLOK) return;
+  gl.bindTexture(gl.TEXTURE_2D, posTex[ping]);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, N, gl.RGBA, gl.FLOAT, randomSand(N));
+}
+function resize(){
+  DPR = dprNow();
+  W = canvas.width = Math.round(innerWidth * DPR); H = canvas.height = Math.round(innerHeight * DPR);
+  const size = Math.max(150, Math.min(innerWidth - 36, innerHeight - 320, 860));
+  layout = { cx: innerWidth / 2, cy: 64 + (innerHeight - 320 - 24) / 2 + 12, size };
+  if (sceneTex) gl.deleteTexture(sceneTex);
+  sceneTex = makeTex(W, H, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null, true);
+  sceneFbo = makeFbo(sceneTex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+}
+
+if (GLOK) try {
+  prog.update = program(VS_FULL, FS_UPDATE);
+  prog.points = program(VS_POINTS, FS_POINTS);
+  prog.solid = program(VS_FULL, FS_SOLID);
+  prog.final = program(VS_FULL, FS_FINAL);
+  vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  initParticles(); resize();
+} catch (e){ console.error(e); GLOK = false; $("fallback").style.display = "grid"; $("fallback").textContent = "Shader error — see console."; }
+
+/* ───────────────────────── gift state + video frame ───────────────────────── */
+const G = { name: "", msg: "", words: [], shown: 0, nameOn: false };
+const REC = { on: false, canvas: null };
+
+function drawRecFrame(){
+  const rc = REC.canvas, c = rc.getContext("2d"), w = rc.width, h = rc.height;
+  c.fillStyle = "#06060a"; c.fillRect(0, 0, w, h);
+  const s = layout.size * DPR * 1.16, x0 = layout.cx * DPR - s / 2, y0 = layout.cy * DPR - s / 2;
+  c.drawImage(canvas, x0, y0, s, s, 30, 270, 660, 660);
+  const col = `rgb(${acc.map(v => Math.round(v * 255)).join(",")})`;
+  c.textAlign = "center";
+  if (G.nameOn){
+    c.fillStyle = col; c.font = "500 24px ui-monospace, Consolas, monospace";
+    if ("letterSpacing" in c) c.letterSpacing = "8px";
+    c.fillText(("for " + G.name).toUpperCase(), w / 2, 190);
+    if ("letterSpacing" in c) c.letterSpacing = "0px";
+  }
+  c.fillStyle = "rgba(236,232,223,.95)"; c.font = "italic 42px Georgia, serif";
+  const shown = G.words.slice(0, G.shown), lines = []; let line = "";
+  for (const wd of shown){
+    const t = line ? line + " " + wd : wd;
+    if (c.measureText(t).width > 600 && line){ lines.push(line); line = wd; } else line = t;
+  }
+  if (line) lines.push(line);
+  lines.slice(-5).forEach((l, i) => c.fillText(l, w / 2, 1010 + i * 56));
+  c.fillStyle = "rgba(236,232,223,.35)"; c.font = "18px ui-monospace, Consolas, monospace";
+  if ("letterSpacing" in c) c.letterSpacing = "5px";
+  c.fillText("THE SHAPE OF THOUGHT", w / 2, 1220);
+  if ("letterSpacing" in c) c.letterSpacing = "0px";
+}
+
+/* ───────────────────────── frame ───────────────────────── */
+const modeBuf = new Float32Array(MAXM * 4), ae = new Float32Array(MAXM);
+let last = performance.now(), time = 0, acc = [.5, .88, .82], accT = acc.slice();
+
+function step(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
+  const k = 1 - Math.exp(-dt * 2.4); let delta = 0;
+  for (let i = 0; i < MAXM; i++){
+    delta += Math.abs(S.tn[i] - S.n[i]) + Math.abs(S.tm[i] - S.m[i]) + Math.abs(S.ta[i] - S.a[i]) * 4;
+    S.n[i] += (S.tn[i] - S.n[i]) * k; S.m[i] += (S.tm[i] - S.m[i]) * k; S.a[i] += (S.ta[i] - S.a[i]) * k;
+  }
+  S.val += (S.tval - S.val) * k; S.aro += (S.taro - S.aro) * k;
+  S.impulse *= Math.exp(-dt * 1.4);
+  const sweepTarget = S.ptr.down && S.ptr.inside ? 1 : 0;
+  S.sweepOn += (sweepTarget - S.sweepOn) * (1 - Math.exp(-dt * 5));
+  let tot = 0; const cnt = Math.max(1, S.count - 1);
+  for (let i = 0; i < MAXM; i++){
+    const breathe = 1 + .22 * Math.sin(time * .33 + S.ph[i] * 1.7);
+    const pos = S.count > 1 ? i / cnt : .5, dd = pos - S.sweep;
+    const bump = Math.exp(-dd * dd / .025) + .06;
+    ae[i] = S.a[i] * breathe * lerp(1, bump, S.sweepOn);
+    tot += Math.abs(ae[i]);
+  }
+  const norm = tot || 1;
+  for (let i = 0; i < MAXM; i++){ modeBuf[i * 4] = S.n[i]; modeBuf[i * 4 + 1] = S.m[i]; modeBuf[i * 4 + 2] = ae[i] / norm; modeBuf[i * 4 + 3] = S.sg[i]; }
+  const energy = clamp(.5 + S.impulse + delta * .7 + (S.ptr.down ? .5 : 0), .4, 3.2);
+  audioFrame(ae, norm);
+  if (S.dirty){ S.dirty = false; accT = accent(S.tval, S.taro); }
+  for (let i = 0; i < 3; i++) acc[i] += (accT[i] - acc[i]) * k;
+  document.documentElement.style.setProperty("--accent", `rgb(${acc.map(c => Math.round(c * 255)).join(",")})`);
+
+  if (GLOK){
+    if (dt > .034) slowFrames++; else slowFrames = Math.max(0, slowFrames - 1);
+    if (slowFrames > 45 && Q < 3 && !REC.on){ Q++; slowFrames = 0; initParticles(); resize(); }
+    if (innerWidth > 0 && innerHeight > 0 &&
+        (Math.round(innerWidth * dprNow()) !== W || Math.round(innerHeight * dprNow()) !== H)) resize();
+    gl.disable(gl.BLEND);
+    const r = ping, w = 1 - ping;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, posFbo[w]); gl.viewport(0, 0, N, N);
+    gl.useProgram(prog.update.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, posTex[r]); gl.uniform1i(prog.update.u.uPos, 0);
+    gl.uniform4fv(prog.update.u.uModes, modeBuf);
+    gl.uniform1f(prog.update.u.uTime, time); gl.uniform1f(prog.update.u.uEnergy, energy);
+    gl.uniform1f(prog.update.u.uSpeed, 0.00055);
+    const pt = S.ptr;
+    gl.uniform4f(prog.update.u.uPtr, pt.x, pt.y, .09, pt.down && pt.inside ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    ping = w;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo); gl.viewport(0, 0, W, H);
+    gl.enable(gl.BLEND);
+    gl.useProgram(prog.solid.p);
+    gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
+    gl.uniform4f(prog.solid.u.uC, .84, .84, .84, 1); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.uniform4f(prog.solid.u.uC, .008, .008, .008, 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.useProgram(prog.points.p); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.bindTexture(gl.TEXTURE_2D, posTex[ping]); gl.uniform1i(prog.points.u.uPos, 0);
+    gl.uniform1i(prog.points.u.uN, N); gl.uniform2f(prog.points.u.uRes, W, H);
+    gl.uniform3f(prog.points.u.uView, layout.cx * DPR, H - layout.cy * DPR, layout.size * DPR);
+    gl.uniform1f(prog.points.u.uSize, Math.max(1.4, 1.5 * DPR * (layout.size / 700 + .35)));
+    gl.uniform3f(prog.points.u.uAccent, acc[0], acc[1], acc[2]);
+    gl.uniform1f(prog.points.u.uAlpha, Math.min(.9, .5 * Math.pow(384 / N, 2)));
+    gl.drawArrays(gl.POINTS, 0, N * N);
+    gl.disable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, sceneTex); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+    gl.useProgram(prog.final.p);
+    gl.uniform1i(prog.final.u.uScene, 0); gl.uniform2f(prog.final.u.uRes, W, H);
+    gl.uniform3f(prog.final.u.uView, layout.cx * DPR, H - layout.cy * DPR, layout.size * DPR);
+    gl.uniform3f(prog.final.u.uAccent, acc[0], acc[1], acc[2]);
+    gl.uniform1f(prog.final.u.uTime, time); gl.uniform1f(prog.final.u.uPulse, Math.min(1, S.impulse));
+    gl.uniform4fv(prog.final.u.uModes, modeBuf);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (REC.on) drawRecFrame();
+  }
+  requestAnimationFrame(step);
+}
+
+/* ───────────────────────── text + sequence ───────────────────────── */
+const who = $("who"), txt = $("txt"), read = $("read");
+let cur = analyze("breathe"), seq = [];
+const setMode = m => { document.body.dataset.mode = m; };
+function describe(res){
+  const v = res.valence, a = res.arousal;
+  const vw = v <= -.5 ? "heavy" : v < -.15 ? "wistful" : v < .15 ? "still" : v < .5 ? "warm" : "radiant";
+  const aw = a < .3 ? "slow" : a < .6 ? "alive" : "restless";
+  const root = Math.round(12 * Math.log2((98 * Math.pow(2, a * .6)) / 261.63) + 120) % 12;
+  const sc = v > .25 ? "major" : v < -.25 ? "minor" : "open";
+  const chord = res.modes.slice(0, 6).map(m => m.n + "×" + m.m).join("  ");
+  read.innerHTML = `<b>${vw}</b> · <b>${aw}</b> · ${NOTE[root]} ${sc} pentatonic<br>${res.modes.length} modes &nbsp;${chord}`;
+}
+function applyText(text, soft){
+  S.text = text; cur = analyze(text); setTarget(cur); S.dirty = true; describe(cur);
+  S.impulse = Math.max(S.impulse, soft ? .5 : 1.2);
+}
+const fullText = () => (who.value + " " + txt.value).trim() || "breathe";
+function silence(){ S.ta.fill(0); S.a.fill(0); }
+function clearSeq(){ seq.forEach(clearTimeout); seq = []; }
+const at = (ms, fn) => seq.push(setTimeout(fn, ms));
+
+function runSequence(done){
+  clearSeq();
+  G.words = G.msg.split(/\s+/).filter(Boolean); G.shown = 0; G.nameOn = false;
+  $("capName").style.opacity = 0; $("capMsg").textContent = "";
+  $("capName").textContent = "for " + G.name;
+  setMode("play");
+  silence(); scatter(); S.impulse = 0;
+  at(700, () => { $("capName").style.opacity = 1; G.nameOn = true; });
+  at(1700, () => { applyText((G.name + " " + G.msg).trim(), false); strikeSound(); });
+  const gap = clamp(6500 / Math.max(1, G.words.length), 240, 520), start = 2900;
+  G.words.forEach((w, i) => at(start + i * gap, () => {
+    G.shown = i + 1; $("capMsg").textContent = G.words.slice(0, G.shown).join(" ");
+    wordPluck(w);
+  }));
+  const end = start + G.words.length * gap + 2600;
+  at(end, () => { setMode("end"); if (done) done(); });
+  return end;
+}
+
+/* ───────────────────────── share link ───────────────────────── */
+const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const dec = s => JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))));
+function currentGift(){ return { n: who.value.trim().slice(0, 24) || "you", m: txt.value.trim().slice(0, 140) }; }
+function giftLink(){ return location.href.split("#")[0] + "#g=" + enc(currentGift()); }
+
+/* ───────────────────────── interaction ───────────────────────── */
+function onType(e){
+  audioInit();
+  if (e && e.data && Audio_.ctx) charPluck(e.data);
+  applyText(fullText(), true);
+}
+who.addEventListener("input", onType); txt.addEventListener("input", onType);
+function play(){
+  if (!txt.value.trim()){ txt.focus(); return; }
+  audioInit(); G.name = currentGift().n; G.msg = currentGift().m; runSequence();
+}
+$("form").addEventListener("submit", e => { e.preventDefault(); play(); });
+$("bPlay").addEventListener("click", play);
+$("bReplay").addEventListener("click", () => { audioInit(); runSequence(); });
+$("bNew").addEventListener("click", () => {
+  clearSeq(); history.replaceState(null, "", location.href.split("#")[0]);
+  who.value = ""; txt.value = ""; applyText("breathe", true); setMode("create"); who.focus();
+});
+$("bLink").addEventListener("click", async () => {
+  if (!txt.value.trim()){ txt.focus(); return; }
+  const url = giftLink(); history.replaceState(null, "", url);
+  const b = $("bLink");
+  try { await navigator.clipboard.writeText(url); b.textContent = "Link copied"; } catch { b.textContent = "Link is in the address bar"; }
+  setTimeout(() => b.textContent = "Copy link", 2200);
+});
+$("bOpen").addEventListener("click", () => {
+  audioInit(); G.name = who.value; G.msg = txt.value; runSequence();
+});
+
+function canvasToPlate(e){ return { x: (e.clientX - layout.cx) / layout.size + .5, y: .5 - (e.clientY - layout.cy) / layout.size }; }
+canvas.addEventListener("pointerdown", e => {
+  audioInit(); const p = canvasToPlate(e); Object.assign(S.ptr, p, { down: true, inside: p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1 });
+  canvas.setPointerCapture(e.pointerId);
+  if (S.ptr.inside){ S.sweep = clamp(p.x, 0, 1); S.impulse = Math.max(S.impulse, .9); strikeSound(); }
+});
+canvas.addEventListener("pointermove", e => {
+  const p = canvasToPlate(e); Object.assign(S.ptr, p, { inside: p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1 });
+  if (S.ptr.down && S.ptr.inside) S.sweep = clamp(p.x, 0, 1);
+});
+const up = () => { S.ptr.down = false; };
+canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+addEventListener("resize", () => { if (GLOK) resize(); });
+$("bSound").addEventListener("click", () => { audioInit(); setSound(!Audio_.on); });
+
+/* ───────────────────────── save video ───────────────────────── */
+const vidEl = $("vidEl"); let vidUrl = null;
+$("vidClose").addEventListener("click", () => { $("vid").classList.remove("on"); vidEl.pause(); if (vidUrl){ URL.revokeObjectURL(vidUrl); vidUrl = null; } });
+$("bVid").addEventListener("click", () => {
+  if (!txt.value.trim()){ txt.focus(); return; }
+  if (!GLOK || !window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream){
+    alert("This browser can't record video from the page. Try Chrome or Edge on a computer."); return;
+  }
+  audioInit(); if (!Audio_.on) setSound(true);
+  const cands = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  const mime = cands.find(t => MediaRecorder.isTypeSupported(t)) || "";
+  REC.canvas = REC.canvas || Object.assign(document.createElement("canvas"), { width: 720, height: 1280 });
+  const stream = REC.canvas.captureStream(30);
+  Audio_.rec.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+  const chunks = [];
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : {});
+  mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  mr.onstop = () => {
+    REC.on = false;
+    const type = mr.mimeType || mime || "video/webm", blob = new Blob(chunks, { type });
+    if (vidUrl) URL.revokeObjectURL(vidUrl);
+    vidUrl = URL.createObjectURL(blob); vidEl.src = vidUrl;
+    const ext = type.includes("mp4") ? "mp4" : "webm";
+    $("vidDl").href = vidUrl; $("vidDl").download = "sound-portrait-" + (G.name || "you").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-") + "." + ext;
+    $("vidNote").textContent = ext === "mp4" ? "Vertical 720×1280, ready for Reels, Shorts and TikTok." :
+      "Saved as WebM. Instagram and TikTok may need an MP4, so convert it first (for example in CapCut).";
+    $("vid").classList.add("on"); setMode("create");
+  };
+  G.name = currentGift().n; G.msg = currentGift().m;
+  REC.on = true; mr.start();
+  const total = runSequence(() => setTimeout(() => mr.stop(), 1200));
+  $("bVid").textContent = "Recording…"; setTimeout(() => $("bVid").textContent = "Save video", total + 1500);
+});
+
+/* placeholders keep the empty state inviting */
+const EX = ["Anna", "Mum", "Dad", "my best friend", "Alex"], EXT = ["happy birthday, you make every room warmer", "thank you for staying", "I still think about that summer", "I'm so proud of you!", "come home soon"];
+let exi = 0; setInterval(() => { if (!who.value && !txt.value){ who.placeholder = EX[exi % EX.length]; txt.placeholder = EXT[exi % EXT.length] + "…"; exi++; } }, 3800);
+
+/* open a received gift */
+const hm = location.hash.match(/^#g=(.+)$/);
+if (hm){
+  try {
+    const g = dec(hm[1]); who.value = String(g.n || "").slice(0, 24); txt.value = String(g.m || "").slice(0, 140);
+    $("introName").textContent = who.value || "you"; silence(); setMode("intro");
+  } catch { /* bad link: fall back to the creator */ }
+}
+applyText(hm ? "breathe" : "breathe", true); describe(cur);
+if (document.body.dataset.mode === "intro") silence();
+
+if (GLOK) requestAnimationFrame(t => { last = t; step(t); });
+window.__plate = { S, G, analyze, runSequence, get N(){ return N; }, get ok(){ return GLOK; } };
+</script>
+</body>
+</html>
