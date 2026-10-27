@@ -93,7 +93,7 @@ body[data-mode="intro"] #intro{display:grid}
   <p class="eyebrow">A sound portrait for</p>
   <h2 id="introName"></h2>
   <button class="btn main" id="bOpen" type="button">Open it</button>
-  <small>Turn your sound on first.</small>
+  <small>Turn the volume up. On iPhone, switch off silent mode.</small>
 </div>
 
 <div id="vid" role="dialog" aria-label="Your video">
@@ -192,10 +192,26 @@ function pitchFor(n, m, scaleName, root){
   const q = Math.round(Math.sqrt(n * n + m * m) * .85), sc = SCALES[scaleName];
   return root * Math.pow(2, (sc[q % 5] + 12 * Math.floor(q / 5)) / 12);
 }
+/* iPhone: Web Audio obeys the silent switch unless the page is in a "playback" audio session.
+   Declare it, and also loop a silent <audio> element, which older iOS versions treat the same way. */
+function unlockMobileAudio(){
+  try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
+  try {
+    if (!Audio_.silent){
+      const n = 800, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+      const a = new Audio(URL.createObjectURL(new Blob([b], { type: "audio/wav" })));
+      a.loop = true; a.setAttribute("playsinline", ""); Audio_.silent = a;
+    }
+    Audio_.silent.play().catch(() => {});
+  } catch {}
+}
 function audioInit(){
-  if (Audio_.ctx){ if (Audio_.ctx.state === "suspended") Audio_.ctx.resume(); return; }
+  unlockMobileAudio();
+  if (Audio_.ctx){ if (Audio_.ctx.state !== "running") Audio_.ctx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-  const ctx = Audio_.ctx = new AC();
+  const ctx = Audio_.ctx = new AC(); ctx.resume();
   const master = Audio_.master = ctx.createGain(); master.gain.value = 0;
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 4;
   const lp = Audio_.lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; lp.Q.value = .4;
